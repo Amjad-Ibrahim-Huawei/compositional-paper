@@ -1,0 +1,251 @@
+# Documentation: https://openfga.dev/docs/modeling/advanced/slack
+# FGA Playground: https://play.fga.dev/sandbox/?store=slack
+name: Slack
+model_file: ./model.fga
+tuples:
+  # The Sandcastle workspace is the parent workspace of the #general channel
+  - user: workspace:sandcastle
+    relation: parent_workspace
+    object: channel:general
+  # The Sandcastle workspace is the parent workspace of the #marketing_internal channel
+  - user: workspace:sandcastle
+    relation: parent_workspace
+    object: channel:marketing_internal
+  # The Sandcastle workspace is the parent workspace of the #proj_marketing_campaign channel
+  - user: workspace:sandcastle
+    relation: parent_workspace
+    object: channel:proj_marketing_campaign
+  # Members of the Sandcastle workspace are writers in the #proj_marketing_campaign channel
+  # - user: workspace:sandcastle#member
+  #   relation: writer
+  #   object: channel:proj_marketing_campaign
+  # Amy is a legacy admin on the Sandcastle workspace
+  - user: user:amy
+    relation: legacy_admin
+    object: workspace:sandcastle
+  # Bob is a channels admin on the Sandcastle workspace
+  - user: user:bob
+    relation: channels_admin
+    object: workspace:sandcastle
+  # Catherine is a member in the Sandcastle workspace
+  - user: user:catherine
+    relation: direct_member
+    object: workspace:sandcastle
+  # David is a guest in the Sandcastle workspace
+  - user: user:david
+    relation: guest
+    object: workspace:sandcastle
+  # Emily is a member in the Sandcastle workspace
+  - user: user:emily
+    relation: direct_member
+    object: workspace:sandcastle
+  # Bob is a writer in the #marketing_internal channel
+  - user: user:bob
+    relation: direct_writer
+    object: channel:marketing_internal
+  # David is a writer in the #proj_marketing_campaign channel
+  - user: user:david
+    relation: direct_writer
+    object: channel:proj_marketing_campaign
+  # Emily is a writer in the #marketing_internal channel
+  - user: user:emily
+    relation: direct_writer
+    object: channel:marketing_internal
+  # Emily is a writer in the #general channel
+  - user: user:emily
+    relation: direct_writer
+    object: channel:general
+    
+   # ===== Delegations (user -> agent) =====
+  # Emily → copilot (unconditional)
+  - user: agent:copilot
+    relation: delegatee
+    object: user:emily
+
+  # Bob → workflow (temporal delegation; valid through Nov 30, 2025)
+  - user: agent:workflow
+    relation: delegatee
+    object: user:bob
+
+
+  # Catherine → vendorbot (purpose-limited: "marketing")
+  - user: agent:vendorbot
+    relation: delegatee
+    object: user:catherine
+  # ===== Sessions (agent -> session) =====
+  # Sessions assert which agent is acting
+  - user: agent:copilot
+    relation: actor
+    object: session:sess_copilot
+
+  - user: agent:workflow
+    relation: actor
+    object: session:sess_workflow
+
+  - user: agent:vendorbot
+    relation: actor
+    object: session:sess_vendorbot
+
+  # ===== Scopes and holders (session -> scope) =====
+  # A default scope for Sandcastle; sessions become holders (time-bounded where indicated)
+  - user: session:sess_copilot
+    relation: holder
+    object: scope:sandcastle_scope
+
+  - user: session:sess_workflow
+    relation: holder
+    object: scope:sandcastle_scope
+
+
+  - user: session:sess_vendorbot
+    relation: holder
+    object: scope:sandcastle_scope
+
+  # (Optional) A second scope to show denial when channel lacks it
+  - user: session:sess_copilot
+    relation: holder
+    object: scope:engineering_scope
+
+  # ===== Attach scopes to channels (channel -> write_scopes) =====
+  # Allow writing in these channels only when an agent's session is active in these scopes
+  - user: scope:sandcastle_scope
+    relation: write_scopes
+    object: channel:marketing_internal
+
+  - user: scope:sandcastle_scope
+    relation: write_scopes
+    object: channel:proj_marketing_campaign
+
+  # (Intentionally do NOT add engineering_scope to #general to demonstrate a denial)
+  # - user: scope:engineering_scope
+  #   relation: write_scopes
+  #   object: channel:general 
+    
+    
+tests:
+  - name: Test
+    check:
+      - user: user:amy
+        object: workspace:sandcastle
+        assertions:
+          channels_admin: true
+      - user: user:david
+        object: workspace:sandcastle
+        assertions:
+          channels_admin: false
+      - user: user:david
+        object: channel:marketing_internal
+        assertions:
+          writer: false
+      - user: user:emily
+        object: channel:marketing_internal
+        assertions:
+          writer: true
+      - user: user:david
+        object: channel:proj_marketing_campaign
+        assertions:
+          writer: true
+      - user: user:bob
+        object: channel:general
+        assertions:
+          writer: true
+
+     
+  - name: Test which channels can David write to
+    list_objects:
+      - user: user:david
+        type: channel
+        assertions:
+          writer: 
+            - channel:proj_marketing_campaign
+
+  - name: Test who can write to the proj_marketing_campaign channel
+    list_users:
+      - object: channel:proj_marketing_campaign
+        user_filter:
+          - type: user
+        assertions:
+          writer:
+            users: 
+              - user:bob
+              - user:amy
+              - user:david
+              - user:emily
+              - user:catherine
+  - name: Agent overlay — copilot via Emily can write to marketing_internal
+    check:
+      - user: agent:copilot
+        object: channel:marketing_internal
+        context:
+          current_time: '2025-11-11T10:00:00Z'
+        assertions:
+          writer: true
+  - name: Agent overlay — copilot denied on #general (scope not attached)
+    check:
+      - user: agent:copilot
+        object: channel:general
+        context:
+          current_time: '2025-11-11T10:00:00Z'
+        assertions:
+          writer: false
+
+  - name: Agent overlay — workflow via Bob before/after temporal delegation expiry
+    check:
+      # Before Bob's delegation expires (expires_at: 2025-11-30T23:59:59Z)
+      - user: agent:workflow
+        object: channel:marketing_internal
+        context:
+          current_time: '2025-11-25T12:00:00Z'
+        assertions:
+          writer: true
+
+  - name: Agent overlay — vendorbot purpose-bound delegation (marketing passes, finance fails)
+    check:
+      - user: agent:vendorbot
+        object: channel:proj_marketing_campaign
+        context:
+          current_time: '2025-11-11T10:00:00Z'
+          purpose: marketing
+        assertions:
+          writer: true
+ 
+
+  - name: Agent overlay — list channels an agent can write to (copilot)
+    list_objects:
+      - user: agent:copilot
+        type: channel
+        context:
+          current_time: '2025-11-11T10:00:00Z'
+        assertions:
+          writer:
+            - channel:marketing_internal
+            - channel:proj_marketing_campaign
+
+  - name: Agent overlay — list overlay actors for #marketing_internal
+    list_users:
+      - object: channel:marketing_internal
+        user_filter:
+          - type: agent
+        context:
+          current_time: '2025-11-11T10:00:00Z'
+        assertions:
+          writer:
+            users:
+              - agent:copilot
+              - agent:workflow
+              - agent:vendorbot
+
+  - name: Agent overlay — list overlay actors for #proj_marketing_campaign (purpose=marketing)
+    list_users:
+      - object: channel:proj_marketing_campaign
+        user_filter:
+          - type: agent
+        context:
+          current_time: '2025-11-11T10:00:00Z'
+          purpose: marketing
+        assertions:
+          writer:
+            users:
+              - agent:vendorbot 
+              - agent:copilot
+  
