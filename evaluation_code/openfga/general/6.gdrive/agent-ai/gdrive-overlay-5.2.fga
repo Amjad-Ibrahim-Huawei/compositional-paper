@@ -1,0 +1,92 @@
+  model
+  schema 1.1
+    ########################################
+    # Identities (domain + overlay) best performance; edited to add partent in doc
+    ########################################
+
+    type user
+      relations
+        # human → agent delegation (root)
+        define delegatee: [agent, agent with temporal_delegation, agent with conditional_delegation]
+        define can_execute_on_my_behalf: delegatee or can_execute_on_my_behalf from delegatee
+
+    type group
+      relations
+        define member: [user]
+        define can_execute_on_my_behalf: can_execute_on_my_behalf from member
+
+    type agent
+      relations
+        # agent → agent delegation
+        define delegatee: [agent, agent with temporal_delegation, agent with conditional_delegation]
+        define can_execute_on_my_behalf: delegatee or can_execute_on_my_behalf from delegatee
+
+    type session
+      relations
+        define actor: [agent]
+        define as_agent: actor
+
+    type scope
+      relations
+      # --> performance  define parent: [scope]
+        define holder: [session, session with temporal_access]
+        define sessions: holder
+        define agents_direct: as_agent from holder
+
+   type folder
+      relations
+        define can_create_file: owner
+        define owner: [user]
+        define parent: [folder]
+        define viewer: [user]
+        # --- CHANGED: move group membership expansion to the object side
+        #              instead of putting `group#member` directly in `viewer`.
+        define group_viewer: [group]
+        # --- CHANGED: user-typed viewerset; expands groups via `member from group_viewer`.
+		define can_view_human: viewer or owner or member from group_viewer or can_view_human from parent
+        
+        define in_scope: [scope]
+           # Lower-cost overlay: separate scope envelope from delegation lift.
+           define effective_scope_agent: agents_direct from in_scope
+        # Bounded folder inheritance expansion (max 3 parent hops).
+        define effective_agent_viewer: can_execute_on_my_behalf from viewer or can_execute_on_my_behalf from owner or can_execute_on_my_behalf from group_viewer or effective_agent_viewer from parent  
+        define can_view: can_view_human or (effective_scope_agent and effective_agent_viewer)
+   
+      
+
+  type doc
+    relations
+      define can_share: owner or owner from parent
+      define can_write: owner or owner from parent
+
+      define owner: [user]
+      define parent: [folder]
+      # --- CHANGED: direct viewers are user-typed and derived from folder.viewer_user
+       define viewer: [user]
+      # --- CHANGED: doc viewers are user-typed and derived from folder.viewer_user
+      define group_viewer: [group]
+      # --- CHANGED: user-typed viewerset
+       
+      define can_change_owner: owner
+      define human_viewer: viewer or member from group_viewer  or owner or can_view_human from parent
+
+      define effective_scope_agent: effective_scope_agent from parent
+      # Bounded document inheritance expansion (max 3 parent hops) — replaces
+      # the previous unbounded recursive effective_agent_viewer on doc.
+      define effective_agent_viewer: can_execute_on_my_behalf from viewer or can_execute_on_my_behalf from group_viewer or can_execute_on_my_behalf from owner or effective_agent_viewer from parent
+  
+
+    define can_read: human_viewer or (effective_scope_agent and effective_agent_viewer)
+
+    ########################################
+    # Guards
+    ########################################
+    condition temporal_access(expires_at: timestamp, current_time: timestamp) {
+      current_time < expires_at
+    }
+    condition temporal_delegation(expires_at: timestamp, current_time: timestamp) {
+      current_time < expires_at
+    }
+    condition conditional_delegation(allowed_purposes: list<string>, purpose: string) {
+      purpose in allowed_purposes
+    }

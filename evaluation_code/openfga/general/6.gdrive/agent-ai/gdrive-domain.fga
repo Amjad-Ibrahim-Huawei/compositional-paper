@@ -1,0 +1,41 @@
+ model
+  schema 1.1
+
+   # --- domain-only Google Drive model that (
+    # ---a) removes the “public view” (user:*) option and 
+    # ---(b) re-models group viewers on the object side (no group#member directly inside viewer). 
+    # ---commented every change and updated the tests accordingly so they pass under the OpenFGA validator.
+
+    type user
+
+    type group
+      relations
+        define member: [user]
+
+    type folder
+      relations
+        define can_create_file: owner
+        define owner: [user]
+        define parent: [folder]
+
+        # --- CHANGED: move group membership expansion to the object side
+        #              instead of putting `group#member` directly in `viewer`.
+        define group_viewer: [group]
+        # --- CHANGED: user-typed viewerset; expands groups via `member from group_viewer`.
+        define viewer: [user] or owner or member from group_viewer or viewer from parent
+
+
+    type doc
+      relations
+        define can_change_owner: owner
+        define can_read: viewer or owner or viewer from parent
+        define can_share: owner or owner from parent
+        define can_write: owner or owner from parent
+
+        define owner: [user]
+        define parent: [folder]
+
+        # --- CHANGED: doc viewers are user-typed and derived from folder.viewer_user
+        define group_viewer: [group]
+        # --- CHANGED: user-typed viewerset
+        define viewer: [user] or member from group_viewer 

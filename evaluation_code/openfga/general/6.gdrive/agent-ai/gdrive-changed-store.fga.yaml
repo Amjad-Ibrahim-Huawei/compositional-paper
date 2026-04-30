@@ -1,0 +1,162 @@
+model: |
+ model
+  schema 1.1
+
+   # --- domain-only Google Drive model that (
+    # ---a) removes the “public view” (user:*) option and 
+    # ---(b) re-models group viewers on the object side (no group#member directly inside viewer). 
+    # ---commented every change and updated the tests accordingly so they pass under the OpenFGA validator.
+
+    type user
+
+    type group
+      relations
+        define member: [user]
+
+    type folder
+      relations
+        define can_create_file: owner
+        define owner: [user]
+        define parent: [folder]
+
+        # --- CHANGED: move group membership expansion to the object side
+        #              instead of putting `group#member` directly in `viewer`.
+        define group_viewer: [group]
+        # --- CHANGED: user-typed viewerset; expands groups via `member from group_viewer`.
+        define viewer: [user] or owner or member from group_viewer or viewer from parent
+
+
+    type doc
+      relations
+        define can_change_owner: owner
+        define can_read: viewer or owner or viewer from parent
+        define can_share: owner or owner from parent
+        define can_write: owner or owner from parent
+
+        define owner: [user]
+        define parent: [folder]
+
+        # --- CHANGED: doc viewers are user-typed and derived from folder.viewer_user
+        define group_viewer: [group]
+        # --- CHANGED: user-typed viewerset
+        define viewer: [user] or member from group_viewer 
+
+
+tuples:
+  # Anne is a member of the Contoso group
+  - user: user:anne
+    relation: member
+    object: group:contoso
+  # Beth is a member of the Contoso group
+  - user: user:beth
+    relation: member
+    object: group:contoso
+  # Charles is a member of the Fabrikam group
+  - user: user:charles
+    relation: member
+    object: group:fabrikam
+
+  # The "Product 2021" folder contains the "Public Roadmap" document
+  - user: folder:product-2021
+    relation: parent
+    object: doc:public-roadmap
+  # The "Product 2021" folder contains the "2021 Roadmap" document
+  - user: folder:product-2021
+    relation: parent
+    object: doc:2021-roadmap
+
+  # --- CHANGED: attach the GROUP OBJECT to `group_viewer` (not `viewer` with group#member)
+  - user: group:fabrikam
+    relation: group_viewer
+    object: folder:product-2021
+
+  # Anne is an owner of the "Product 2021" folder
+  - user: user:anne
+    relation: owner
+    object: folder:product-2021
+
+  # Beth is a viewer of the "2021 Roadmap" document
+  - user: user:beth
+    relation: viewer
+    object: doc:2021-roadmap
+
+  # --- CHANGED: REMOVED public view (user:*) on public-roadmap
+  # (No tuple granting user:* anymore)
+
+
+tests:
+  - name: Test user permissions for doc:2021-roadmap
+    check:
+      - user: user:anne
+        object: doc:2021-roadmap
+        assertions:
+          can_write: true
+      - user: user:beth
+        object: doc:2021-roadmap
+        assertions:
+          can_change_owner: false
+      - user: user:charles
+        object: doc:2021-roadmap
+        assertions:
+          can_read: true
+
+  - name: Test which documents can Anne read
+    list_objects:
+      - user: user:anne
+        type: doc
+        assertions:
+          can_read:
+            - doc:2021-roadmap
+            - doc:public-roadmap  # Anne is folder owner -> viewer of folder -> can_read via parent
+
+  - name: Test who can access doc:2021-roadmap
+    list_users:
+      - object: doc:2021-roadmap
+        user_filter:
+          - type: user
+        assertions:
+          can_read:
+            users:
+              - user:anne     # folder owner -> viewer via parent
+              - user:beth     # direct doc viewer
+              - user:charles  # Fabrikam member -> folder viewer via group -> viewer via parent
+
+  - name: Check if the right users have access to the right documents/folders
+    list_users:
+      # --- CHANGED: no more public document; assert who can_read instead of viewer:user:*
+      - object: doc:public-roadmap
+        user_filter:
+          - type: user
+        assertions:
+          can_read:
+            users:
+              - user:anne     # folder owner
+              - user:charles  # Fabrikam member via folder group_viewer
+
+      # doc:2021-roadmap still has a direct viewer (Beth)
+      - object: doc:2021-roadmap
+        user_filter:
+          - type: user
+        assertions:
+          viewer:
+            users:
+              - user:beth
+
+      # --- CHANGED: check groups attached to folder via group_viewer (object-side)
+      - object: folder:product-2021
+        user_filter:
+          - type: group
+        assertions:
+          group_viewer:
+            users:
+              - group:fabrikam
+
+      # Folder viewers (expanded) are actual users: owner Anne + Fabrikam member Charles
+      - object: folder:product-2021
+        user_filter:
+          - type: user
+        assertions:
+          viewer:
+            users:
+              - user:anne
+              - user:charles

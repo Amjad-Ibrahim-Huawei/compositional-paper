@@ -1,0 +1,82 @@
+model
+  schema 1.1
+
+ ########################################
+    # Identities (domain + overlay)
+    ########################################
+type user
+   relations
+    # human → agent delegation (root)
+    define delegatee: [agent, agent with temporal_delegation, agent with conditional_delegation]
+    define can_execute_on_my_behalf: delegatee or can_execute_on_my_behalf from delegatee
+	
+	
+type agent
+      relations
+        # agent → agent delegation
+        define delegatee: [agent, agent with temporal_delegation, agent with conditional_delegation]
+        define can_execute_on_my_behalf: delegatee or can_execute_on_my_behalf from delegatee
+
+type session
+      relations
+        define actor: [agent]
+        define as_agent: actor
+
+type scope
+      relations
+        define parent: [scope]
+        define holder: [session, session with temporal_access]
+        define sessions: holder or sessions from parent
+        define agents_direct: as_agent from holder
+        define agents: agents_direct or agents from parent
+
+	
+
+type workspace
+  relations
+    define channels_admin: [user] or legacy_admin
+    define guest: [user]
+    define legacy_admin: [user]
+	define direct_member: [user]
+    define member: direct_member or legacy_admin or channels_admin
+	# added for nested membership
+	define can_execute_on_my_behalf: can_execute_on_my_behalf from direct_member or can_execute_on_my_behalf from legacy_admin 
+
+type channel
+  relations
+	# changed the syntax here (maybe needs to be other than parent workspace only but tests are passing)
+    define commenter: [user] or member from parent_workspace or human_writer
+	define parent_workspace: [workspace]
+	define direct_writer: [user]
+    define human_writer: direct_writer or member from parent_workspace
+	
+	
+	# --- Overlay for "writer" begins here ---
+    # Scopes within which writing is allowed (attach scopes per channel as needed)
+    define write_scopes: [scope]
+	
+	# Agents who can act for any user in writer_domain
+    define writer_via_agent: can_execute_on_my_behalf from direct_writer or can_execute_on_my_behalf from parent_workspace
+	
+	# Agents currently active in one of the channels write_scopes 
+    define writer_via_session_scope: agents from write_scopes
+
+    # Overlay actor path requires BOTH delegation and scoped session
+    define writer_overlay_actor: writer_via_agent and writer_via_session_scope
+
+    # Final writer: domain users OR overlay agents
+    define writer: human_writer or writer_overlay_actor
+
+  
+   ########################################
+    # Guards
+    ########################################
+    condition temporal_access(expires_at: timestamp, current_time: timestamp) {
+      current_time < expires_at
+    }
+    condition temporal_delegation(expires_at: timestamp, current_time: timestamp) {
+      current_time < expires_at
+    }
+    condition conditional_delegation(allowed_purposes: list<string>, purpose: string) {
+      purpose in allowed_purposes
+    }

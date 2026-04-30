@@ -1,0 +1,10 @@
+delete  FROM store  where deleted_at  IS NOt NULL;
+
+delete from authorization_model where store not in (select id from store );
+
+delete from assertion where store not in (select id from store );
+
+delete from changelog where store not in (select id from store );
+delete from tuple where store not in (select id from store );
+
+
