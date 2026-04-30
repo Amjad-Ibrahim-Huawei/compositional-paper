@@ -59,10 +59,10 @@ This README enumerates the artifacts necessary to evaluate and reproduce the pap
 ## 5. Relation Tuple Datasets
 
 - `openfga/general/6.gdrive/agent-ai/generated/`  
-  Synthetic relation tuples for the GDrive scenario. Contains domain and overlay files for G1--G8.
+  Synthetic relation tuples for the GDrive scenario. Contains domain and overlay files for G1--G7. (G8 files are around 80MiB so were excluded due to size limit; but they can be reproduced using the scripts as shown in the commands.)
 
 - `openfga/general/slack/agent-ai/generated/`  
-  Synthetic relation tuples for the Slack scenario. Contains domain and overlay files for S1--S5.
+  Synthetic relation tuples for the Slack scenario. Contains domain and overlay files for S1--S4. (S5 files are around 50 MiB so were excluded from the repository due to size limit; but they can be reproduced using the scripts as shown in the commands.)
 
 ## 6. Experimental Results and Analysis
 
