@@ -1,8 +1,6 @@
 # Open Science Artifacts
 
-All artifacts are included in the submitted supplementary material and are accessible to reviewers through the anonymous artifact URL:
 
-<https://gitfront.io/r/anonymous-submission/wFR5K9imudwg/compositional-paper/>
 
 This README enumerates the artifacts necessary to evaluate and reproduce the paper's core contributions.
 
